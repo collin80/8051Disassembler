@@ -44,6 +44,8 @@ RS1 RS0 Working Register Bank and Address
 
 #include "8051_disas.h"
 
+//#define DEBUG     //if you define this you will get an avalanche of messages on the console.
+
 //all 256 op codes
 static Instruct8051 OpCodes[] =
 {
@@ -163,7 +165,7 @@ static Instruct8051 OpCodes[] =
     {"JNZ ", 2, OFFSET, NONE, false, true},
     {"ACALL ", 2, ADDR11, NONE, false, true},
     {"ORL C, ", 2, BIT, NONE, false, false},
-    {"JMP @A+DPTR", 1, NONE, NONE, true, false},
+    {"JMP @A+DPTR", 1, NONE, NONE, false, false}, //yes, this really is a jump instr. but this program can't decode DPTR so don't follow it.
     {"MOV A, ", 2, IMMED, NONE, false, false},
     {"MOV ", 3, DIRECT, IMMED, false, false},
     {"MOV @R0, ", 2, IMMED, NONE, false, false},
@@ -328,7 +330,8 @@ const char *SFR[] =
 };
 
 unsigned char codeSpace[1024]; //bitfield 8192 wide - each bit is 1 if ROM byte is code, 0 if it is data
-unsigned char disasm[8192][64]; //disassembled instructions with 64 bytes allocated for each byte
+unsigned char disasm[8192][64]; //disassembled instructions with 64 bytes allocated for each instruction
+uint16_t callers[8192][10];
 unsigned char fileBuff[8192];
 
 int interpretArgument(int32_t *outInt, char *inBuffer, int opType, uint32_t address, int op)
@@ -342,31 +345,31 @@ int interpretArgument(int32_t *outInt, char *inBuffer, int opType, uint32_t addr
         offset = 0;
         tempInt = 0;
         break;
-    case ADDR11:
-        tempInt = (((unsigned char)op & 0xE0) << 3) + (unsigned char)inBuffer[0];
+    case ADDR11: //take top 5 bits of PC (of following instruction), fill in bottom with these 11 bits.
+        tempInt = (((unsigned char)op & 0xE0) << 3) + (unsigned char)inBuffer[0] + ((address + opSize) & 0xF800);
         offset = 1;
         break;
-    case ADDR16:
+    case ADDR16: //direct 16 bit address with no offsets
         tempInt = ((unsigned char)inBuffer[0] << 8) + (unsigned char)inBuffer[1];
         offset = 2;
         break;
-	case DIRECT:
+	case DIRECT: //direct 8 bit RAM or SFR
         tempInt = (unsigned char)inBuffer[0];
         offset = 1;
         break;
-    case IMMED:
+    case IMMED: //an 8 bit literal
         tempInt = (unsigned char)inBuffer[0];
         offset = 1;
         break;
-    case IMMED16:
+    case IMMED16: //a 16 bit literal
         tempInt = ((unsigned char)inBuffer[0] << 8) + (unsigned char)inBuffer[1];
         offset = 2;
         break;
-    case BIT:
+    case BIT: //a bit from one of the bitfield locations
         tempInt = (unsigned char)inBuffer[0];
         offset = 1;        
         break;
-    case OFFSET: //offset is from the end of this current instruction
+    case OFFSET: //an offset from the end of this current instruction
         tempInt = address + opSize + (signed char)(inBuffer[0]);
         offset = 1;
         break;
@@ -405,11 +408,11 @@ void printArgument(int argType, int32_t value, char *outBuffer)
         //the last 128 bits are in 80, 88, 90, 98 that is 0x80 and upward 8 at a time
         if (value < 0x80) //bits from bytes 0x20 to 0x2F
         {
-            sprintf(outBuffer, "%X.%dh", 0x20 + (value / 8), value % 8);
+            sprintf(outBuffer, "X%X.%d", 0x20 + (value / 8), value % 8);
         }
         else
         {
-            sprintf(outBuffer, "%X.%dh", value & 0xF8, value & 0x07);
+            sprintf(outBuffer, "%s.%d", SFR[((value & 0xF8)-0x80)], value & 0x07);
         }
         break;
     case OFFSET:
@@ -485,7 +488,9 @@ r_8051_op r_8051_disasm(const unsigned char *buf, int bufLen, uint32_t addr, cha
     op.isJump = OpCodes[opNum].isJump;
     op.isCondJump = OpCodes[opNum].isCondJump;
 
-    //printf("OpName: %s length: %i arg1t: %i arg2t: %i\n", op.name, op.length, op.arg1Type, op.arg2Type);
+#ifdef DEBUG
+    printf("OpName: %s length: %i arg1t: %i arg2t: %i\n", op.name, op.length, op.arg1Type, op.arg2Type);
+#endif
 
     offset = interpretArgument(&op.arg1, &buf[1], op.arg1Type, addr, opNum);
     offset = interpretArgument(&op.arg2, &buf[1 + offset], op.arg2Type, addr, opNum);
@@ -531,19 +536,33 @@ boolean getCodeSpaceBit(int byt)
     return false;
 }
 
-void followCodePath(uint32_t startingAddr)
+void followCodePath(uint32_t startingAddr, uint32_t callerAddr)
 {
     r_8051_op currentOp;
     unsigned char outBuff[64];
 
+#ifdef DEBUG
     printf("Start of code path: %x\n", startingAddr);
+#endif
+    disasm[startingAddr][62] = 1; //setting 62 to 1 marks this byte as the start of a code path
+
+    for (int c = 0; c < 10; c++)
+    {
+        if (callers[startingAddr][c] == 0) 
+        {
+            callers[startingAddr][c] = callerAddr;
+            break;
+        }
+    }
 
     while (1 == 1)
     {
         //printf("About to interpret instruction at: %x\n", startingAddr);
         if (getCodeSpaceBit(startingAddr))
         { 
+#ifdef DEBUG
             printf("At address: %x tried to process a location we've already been to.\n", startingAddr);
+#endif
             return; //quit processing if we go back over code that was already processed.
         }
         //decode the next instruction
@@ -552,17 +571,22 @@ void followCodePath(uint32_t startingAddr)
         setCodeSpaceBits(startingAddr, currentOp.length);
         //also copy it's disassembled text version into the master instructions list
         strcpy(disasm[startingAddr], outBuff);
+        disasm[startingAddr][63] = currentOp.length;
+#ifdef DEBUG
         printf("%s\n", outBuff);
+#endif
 
         //if this instruction could possibly jump then take that jump
-        if (currentOp.isCondJump || currentOp.isJump) followCodePath(currentOp.addr);
+        if (currentOp.isCondJump || currentOp.isJump) followCodePath(currentOp.addr, startingAddr);
 
         //there are a variety of reasons we might quit going forward here.
         //perhaps this is a non-conditional jump. In that case we can't go anymore
         //or, perhaps we hit a RET or RETI instruction. So, check for all of the above
-        if (currentOp.isJump || !strcmp("RET",currentOp.name) || !strcmp("RETI",currentOp.name)) 
+        if (currentOp.isJump || !strcmp("RET",currentOp.name) || !strcmp("RETI",currentOp.name) || !strcmp("JMP @A", currentOp.name)) 
         {
+#ifdef DEBUG
             printf("End of code path at: %x\n", startingAddr);
+#endif
             return;
         }
               
@@ -575,44 +599,57 @@ void followCodePath(uint32_t startingAddr)
 int main(int argc, char *argv[]) {    
     FILE *inFile;
     FILE *outFile;
+    boolean alreadyInData = false; 
 
 	if (argc < 2)
     {
-        printf("\nListen dope, you need to provide a filename to load.\n");
+        printf("\nListen, you need to provide a filename to load.\n");
         return -1;
     }
 
     memset(codeSpace, 0, 1024);
     memset(disasm, 0, 8192 * 64);
+    memset(callers, 0, 8192 * sizeof(uint32_t) * 10);
 
     outFile = fopen("outAsm.txt", "w");
     inFile = fopen(argv[1], "rb");
     fread(fileBuff, 8192, 1, inFile);
 
+    fprintf(outFile, "; 8051 Disassembler for SiLabs C8051F530 processors.\n\n");
+    fprintf(outFile, "; Key to reading the assembly:\n");
+    fprintf(outFile, "; Literal values are preceded by #0x\n");
+    fprintf(outFile, "; FLASH locations are preceded by 0x (no #)\n");
+    fprintf(outFile, "; RAM locations are preceded by X\n");
+    fprintf(outFile, "; SFRs are shown as their name.\n");
+    fprintf(outFile, "; Only code that has a valid execution path is decoded.\n");
+    fprintf(outFile, "; Everything else presumed to be data.\n");
+    fprintf(outFile, "; Data returned in hexadecimal and as a character if printable\n\n");
+
     /*
     after reading in the file grab the instruction at 0 which is the reset vector. This sends us on our way. Disassemble it
     */
-    followCodePath(0);      //reset vector
-    followCodePath(0x23);   //UART interrupt
-    followCodePath(0x2B);   //Timer2 Interrupt
+    followCodePath(0, 0);      //reset vector
+    followCodePath(0x23, 0);   //UART interrupt
+    followCodePath(0x2B, 0);   //Timer2 Interrupt
 
     //These six are jump table targets all in one jump table
-    followCodePath(0xA1A);
-    followCodePath(0xA5B);
-    followCodePath(0x80A);
-    followCodePath(0x9A7);
-    followCodePath(0xB38);
-    followCodePath(0xBCE);
+    followCodePath(0xA1A, 0);
+    followCodePath(0xA5B, 0);
+    followCodePath(0x80A, 0);
+    followCodePath(0x9A7, 0);
+    followCodePath(0xB38, 0);
+    followCodePath(0xBCE, 0);
 
     //Here's the targets of another jump table
-    followCodePath(0xF27);
-    followCodePath(0x10A2);
-    followCodePath(0x1154);
-    followCodePath(0x10B8);
-    followCodePath(0x1175);
-    followCodePath(0x11EB);
-    followCodePath(0x1279);
+    followCodePath(0xF27, 0);
+    followCodePath(0x10A2, 0);
+    followCodePath(0x1154, 0);
+    followCodePath(0x10B8, 0);
+    followCodePath(0x1175, 0);
+    followCodePath(0x11EB, 0);
+    followCodePath(0x1279, 0);
 
+#ifdef DEBUG
     printf("\nCode Visualization:\n");
 
     boolean isCode;
@@ -627,22 +664,45 @@ int main(int argc, char *argv[]) {
         }
         printf("|%04X to %04X\n", y*64, (y*64 + 63));
     }
+#endif
 
     //for each byte see if it encodes a disassembled instruction and dump it if so
     for (int x = 0; x < 8192; x++)
     {
-        if(disasm[x][0])
+        if (disasm[x][62] == 1) 
         {
-            fprintf(outFile, "0x%04X %s\n", x, disasm[x]);
+            fprintf(outFile, "\n; Jump Target - Callers: ");
+            for (int c = 0; c < 10; c++) if (callers[x][c] != 0) fprintf(outFile, "%04X ", callers[x][c]);
+            fprintf(outFile, "\n");
+        }
+        if (disasm[x][0])
+        {
+            fprintf(outFile, "0x%04X ", x);
+            //first print out the hex digits of the bytes that form this instruction
+            for (int i = 0; i < 3; i++) {
+                if (i < disasm[x][63]) fprintf(outFile, "%02X ", fileBuff[x + i]);
+                else fprintf(outFile, "   ");
+            }
+            fprintf(outFile, "  %s\n", disasm[x]);
+            alreadyInData = false;
         }
         else if (!getCodeSpaceBit(x))
         {
-            fprintf(outFile, "0x%04X      0x%02X\n", x, fileBuff[x]);
+            if (!alreadyInData) 
+            {
+                alreadyInData = true;
+                fprintf(outFile, "\n; Data in FLASH Space\n");
+            }
+            if (fileBuff[x] > 0x1F && fileBuff[x] < 0x80) fprintf(outFile, "0x%04X            0x%02X (%c)\n", x, fileBuff[x], fileBuff[x]);
+            else fprintf(outFile, "0x%04X            0x%02X\n", x, fileBuff[x]);
         }
     }
 
     fclose(outFile);
     fclose(inFile);
+
+    printf("\nProgram completed successfully. Results in outAsm.txt\n");    
+
 	return 0;
 }
 
