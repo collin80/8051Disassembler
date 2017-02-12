@@ -655,6 +655,7 @@ int main(int argc, char *argv[]) {
     followCodePath(0x1175, 0);
     followCodePath(0x11EB, 0);
     followCodePath(0x1279, 0);
+    followCodePath(0x105E, 0);
 
 #ifdef DEBUG
     printf("\nCode Visualization:\n");
