@@ -183,7 +183,7 @@ static Instruct8051 OpCodes[] =
     {"ANL C, ", 2, BIT, NONE, false, false},
     {"MOVC A, @A+PC", 1, NONE, NONE, false, false},
     {"DIV AB", 1, NONE, NONE, false, false},
-    {"MOV ", 3, DIRECT, DIRECT, false, false},
+    {"MOV ", 3, DIRECT, DIRECT, false, false},  //85
     {"MOV ", 2, DIRECT, IR0, false, false},
     {"MOV ", 2, DIRECT, IR1, false, false},
     {"MOV ", 2, DIRECT, R0, false, false},
@@ -498,8 +498,15 @@ r_8051_op r_8051_disasm(const unsigned char *buf, int bufLen, uint32_t addr, cha
     if (op.arg1Type == ADDR11 || op.arg1Type == ADDR16 || op.arg1Type == OFFSET) op.addr = op.arg1;
     if (op.arg2Type == ADDR11 || op.arg2Type == ADDR16 || op.arg2Type == OFFSET) op.addr = op.arg2;
 
-    printArgument(op.arg1Type, op.arg1, arg1Str);
-    printArgument(op.arg2Type, op.arg2, arg2Str);
+    if (opNum != 0x85) {
+        printArgument(op.arg1Type, op.arg1, arg1Str);
+        printArgument(op.arg2Type, op.arg2, arg2Str);
+    }
+    else  //some joker decided that this instruction and this instruction only should have reversed operands. Why?! I guess it was really funny.
+    {        
+        printArgument(op.arg1Type, op.arg1, arg2Str);
+        printArgument(op.arg2Type, op.arg2, arg1Str);
+    }
     
     if (arg2Str && *arg2Str) {
         sprintf(outString, "%s %s, %s", OpCodes[opNum].name, arg1Str, arg2Str);
