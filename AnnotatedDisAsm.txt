@@ -9,8 +9,34 @@
 ; Everything else presumed to be data.
 ; Data returned in hexadecimal and as a character if printable
 
+;Some relevant places where significant things happen:
+;SBUF reading (Getting a byte from UART): 
+;   0x070A - Write to RAM location 0x66
+;   0x0AC7 - Write to RAM location 0x66 - Called from 0x0903 only
+;   0x0DE1 - Write to RAM location 0x2A - Within UART interrupt handler code
+;SBUF writing (Sending byte out UART):
+;   0x0AF8 - Part of same routine as 0xAC7 above, forwards bytes
+;   0x0E04 - Part of UART interrupt handler code
+;   0x1271 - Send byte stored in R7, called from 0x0EC5
+;SPIDAT reading (Get byte from SPI):
+;   0x11B2 - The only place SPI is ever read from. Store to R7
+;SPIDAT writing (send a byte out SPI):
+;   0x0FE0 - Write from accum
+;   0x11A5 - Write from accum
+;MOVC calls using DPTR (read data bytes from FLASH):
+;   0x00A5, 0x00D2, 0x010A, 0x010F, 0x039C, 0x042C, 0x0430, 0x043E, 0x0469, 0x0477, 0x0486, 0x048A
+;   0x0561, 0x057A, 0x0891, 0x0A50, 0x0A54, 0x0B81, 0x0D3D, 0x0D41, 0x0D4F, 0x0D7A, 0x0D88, 0x0D97
+;   0x0D9B, 0x0D9F, 0x0E57, 0x101D, 0x10FF, 0x1103 (Yes, really that many places...)
+;MOVC Calls using PC (Read bytes from flash relative to current instruction)
+    ;0x044E, 0x0D5F
+;MOVX Reads (Get bytes from RAM via DPTR):
+;   0x0095, 0x009E, 0x00B4, 0x00C5, 0x00ED, 0x00F1, 0x00FE, 0x0102, 0x0E39, 0x0EA4
+;MOVX Writes (Write a byte into RAM via DPTR):
+;   0x00DB, 0x00E4, 0x0118, 0x011C, 0x0129, 0x012D, 0x01A0, 0x01A3, 0x01A6, 0x01A9, 0x01AC, 0x01AF
+;   0x0437, 0x0498, 0x09A0, 0x0D48, 0x0DA9, 0x0E60, 0x0E69
 
-; Jump Target - Callers: 
+
+; Jump Target - Callers: CPU on start up - This is the reset vector
 0x0000 02 04 1C   LJMP  0x041C
 
 ; Data in FLASH Space
@@ -49,22 +75,22 @@
 0x001E 7F 1F      MOV R7,  #0x1F
 0x0020 02 0A E9   LJMP  0x0AE9
 
-; Jump Target - Callers: 
-0x0023 02 0C 0F   LJMP  0x0C0F
+; Jump Target - Callers: UART Interrupt
+0x0023 02 0C 0F   LJMP  0x0C0F 
 
 ; Jump Target - Callers: 0B0F 
 0x0026 E4         CLR A 
-0x0027 F5 D9      MOV  PCAMD, A
+0x0027 F5 D9      MOV  PCAMD, A ;Keep watchdog off
 0x0029 22         RET 
 
 ; Data in FLASH Space
 0x002A            0xFF
 
-; Jump Target - Callers: 
+; Jump Target - Callers: Timer 2 Overflow Interrupt
 0x002B 02 0C 12   LJMP  0x0C12
 
 ; Jump Target - Callers: 0B15 
-0x002E 75 B2 C7   MOV  OSCICN, #0xC7
+0x002E 75 B2 C7   MOV  OSCICN, #0xC7 ; set OSC ICN to 1100 0111 = Enabled in normal mode, Sysclock is oscillator / 1
 0x0031 22         RET 
 
 ; Data in FLASH Space
@@ -73,7 +99,7 @@
 0x0034            0x0C
 0x0035            0x15
 
-; Jump Target - Callers: 0B18 
+; Jump Target - Callers: 0B18    - Routine that just disables global interrupts and returns
 0x0036 C2 AF      CLR  IE.7
 0x0038 22         RET 
 
@@ -625,36 +651,36 @@
 0x0321 22         RET 
 
 ; Jump Target - Callers: 031D 
-0x0322 85 2B 3C   MOV  X3Ch, X2Bh
-0x0325 E5 29      MOV A,  X29h
-0x0327 65 2B      XRL A,  X2Bh
-0x0329 F5 2C      MOV  X2Ch, A
-0x032B 75 2A 01   MOV  X2Ah, #0x01
+0x0322 85 2B 3C   MOV  X3Ch, X2Bh   ;copy RAM 0x2B (Tx Flag) to RAM 0x3C
+0x0325 E5 29      MOV A,  X29h      ;Load accum with value from RAM 0x29
+0x0327 65 2B      XRL A,  X2Bh      ;XOR that with RAM 0x2B (TX Flag)
+0x0329 F5 2C      MOV  X2Ch, A      ;Store result into RAM 0x2C
+0x032B 75 2A 01   MOV  X2Ah, #0x01  ;Set RAM 0x2A to 1 (2A is where byte received from UART is stored)
 
 ; Jump Target - Callers: 035B 
-0x032E E5 20      MOV A,  X20h
-0x0330 24 01      ADD A,  #0x01
-0x0332 FF         MOV R7, A 
-0x0333 E4         CLR A 
-0x0334 33         RLC A 
-0x0335 FE         MOV R6, A 
-0x0336 C3         CLR C 
-0x0337 E5 2A      MOV A,  X2Ah
-0x0339 9F         SUBB A, R7 
-0x033A E4         CLR A 
-0x033B 9E         SUBB A, R6 
-0x033C 50 1F      JNC  0x035D
-0x033E AF 28      MOV R7,  X28h
-0x0340 AE 27      MOV R6,  X27h
-0x0342 AD 26      MOV R5,  X26h
-0x0344 AC 25      MOV R4,  X25h
-0x0346 12 03 7C   LCALL  0x037C
-0x0349 60 03      JZ  0x034E
-0x034B 7F 02      MOV R7,  #0x02
+0x032E E5 20      MOV A,  X20h      ;Copy value from RAM 0x20 to Accum
+0x0330 24 01      ADD A,  #0x01     ;Add one to it
+0x0332 FF         MOV R7, A         ;Store it in R7
+0x0333 E4         CLR A             ;Clear accum
+0x0334 33         RLC A             ;Rotate accum left one - In this case, rotate Carry flag into accum
+0x0335 FE         MOV R6, A         ;Store accum into R6 (R6 is now value from carry flag)
+0x0336 C3         CLR C             ;Clear the carry flag
+0x0337 E5 2A      MOV A,  X2Ah      ;Get value from RAM 0x2A (UART rx'd char) and store to accum
+0x0339 9F         SUBB A, R7        ;Subtract R7 from Accum (because of next clear this is used just to influence carry flag)
+0x033A E4         CLR A             ;Clear accumulator (carry flag still set if R7 was larger than accum)
+0x033B 9E         SUBB A, R6        ;Subtract R6 from newly cleared accum. Carry flag is part of this though.
+0x033C 50 1F      JNC  0x035D       ;Branch if carry not set (Only if value from RAM 0x2A was larger than R7 and R6 was zero?)
+0x033E AF 28      MOV R7,  X28h     
+0x0340 AE 27      MOV R6,  X27h     
+0x0342 AD 26      MOV R5,  X26h     
+0x0344 AC 25      MOV R4,  X25h     
+0x0346 12 03 7C   LCALL  0x037C     ;call not jump so code returns to next line
+0x0349 60 03      JZ  0x034E        ;if call resulted in accum being zero then branch
+0x034B 7F 02      MOV R7,  #0x02    ;Otherwise set R7 to 2 and return
 0x034D 22         RET 
 
-; Jump Target - Callers: 0349 
-0x034E 74 3C      MOV A,  #0x3C
+; Jump Target - Callers: 0349       ;call above returned zero so do this.
+0x034E 74 3C      MOV A,  #0x3C     
 0x0350 25 2A      ADD A,  X2Ah
 0x0352 F8         MOV R0, A 
 0x0353 A6 2B      MOV @R0,  X2Bh
@@ -664,23 +690,23 @@
 0x035B 80 D1      SJMP  0x032E
 
 ; Jump Target - Callers: 033C 
-0x035D E5 2C      MOV A,  X2Ch
-0x035F 60 03      JZ  0x0364
-0x0361 7F 03      MOV R7,  #0x03
+0x035D E5 2C      MOV A,  X2Ch      ; Grab RAM 0x2C (flag to set whether to forward bytes on UART)
+0x035F 60 03      JZ  0x0364        ; Jump if accum is zero (if we're not forwarding bytes on UART)
+0x0361 7F 03      MOV R7,  #0x03    ; Otherwise, set R7 to 3 and return
 0x0363 22         RET 
 
 ; Jump Target - Callers: 035F 
 0x0364 7B 00      MOV R3,  #0x00
 0x0366 7A 00      MOV R2,  #0x00
 0x0368 79 3C      MOV R1,  #0x3C
-0x036A C0 03      PUSH  X03h
-0x036C C0 02      PUSH  X02h
-0x036E C0 01      PUSH  X01h
+0x036A C0 03      PUSH  X03h        ;R3
+0x036C C0 02      PUSH  X02h        ;R2
+0x036E C0 01      PUSH  X01h        ;R1
 0x0370 AB 1D      MOV R3,  X1Dh
 0x0372 AA 1E      MOV R2,  X1Eh
 0x0374 A9 1F      MOV R1,  X1Fh
 0x0376 12 01 41   LCALL  0x0141
-0x0379 7F 01      MOV R7,  #0x01
+0x0379 7F 01      MOV R7,  #0x01    ;Set R7 to 1 and return
 0x037B 22         RET 
 
 ; Jump Target - Callers: 031A 0346 
@@ -791,15 +817,15 @@
 0x0419 7F 02      MOV R7,  #0x02
 0x041B 22         RET 
 
-; Jump Target - Callers: 
-0x041C 78 7F      MOV R0,  #0x7F
-0x041E E4         CLR A 
+; Jump Target - Callers: Reset Vector - Code starts here.
+0x041C 78 7F      MOV R0,  #0x7F    ;set R0 to 0x7F
+0x041E E4         CLR A             ;Clear accum
 
 ; Jump Target - Callers: 0420 
-0x041F F6         MOV @R0, A 
-0x0420 D8 FD      DJNZ R0,  0x041F
-0x0422 75 81 69   MOV  SP, #0x69
-0x0425 02 04 63   LJMP  0x0463
+0x041F F6         MOV @R0, A        ;Write 0 out to memory pointed to by R0
+0x0420 D8 FD      DJNZ R0,  0x041F  ;keep looping, clearing memory from 0x7F to 0
+0x0422 75 81 69   MOV  SP, #0x69    ;Set Stack pointer to 0x69
+0x0425 02 04 63   LJMP  0x0463      ;Call hardware init code
 
 ; Jump Target - Callers: 046A 
 0x0428 02 0A FB   LJMP  0x0AFB
@@ -865,61 +891,61 @@
 0x0462            0x80
 
 ; Jump Target - Callers: 0425 
-0x0463 90 0B 5F   MOV DPTR,  #0x0B5F
+0x0463 90 0B 5F   MOV DPTR,  #0x0B5F    ;Set DPTR to B5F. Sure enough, thats the start of a data table.
 
 ; Jump Target - Callers: 043B 0459 04A6 
-0x0466 E4         CLR A 
-0x0467 7E 01      MOV R6,  #0x01
-0x0469 93         MOVC A, @A+DPTR 
-0x046A 60 BC      JZ  0x0428
-0x046C A3         INC DPTR 
-0x046D FF         MOV R7, A 
-0x046E 54 3F      ANL A,  #0x3F
-0x0470 30 E5 09   JNB  ACC.5, 0x047C
-0x0473 54 1F      ANL A,  #0x1F
-0x0475 FE         MOV R6, A 
-0x0476 E4         CLR A 
-0x0477 93         MOVC A, @A+DPTR 
-0x0478 A3         INC DPTR 
-0x0479 60 01      JZ  0x047C
+0x0466 E4         CLR A                 ;clear accum
+0x0467 7E 01      MOV R6,  #0x01        ;Set R6 to 1
+0x0469 93         MOVC A, @A+DPTR       ;Grab FLASH byte (going to be at 0+B5F at this point)
+0x046A 60 BC      JZ  0x0428            ;If it wasn't zero then branch to 0x428
+0x046C A3         INC DPTR              ;Increment DPTR
+0x046D FF         MOV R7, A             ;Store current accum to R7
+0x046E 54 3F      ANL A,  #0x3F         ;Accum = Accum & 3F (keep only lowest 6 bits)
+0x0470 30 E5 09   JNB  ACC.5, 0x047C    ;If 5th bit is set then branch to 0x47C
+0x0473 54 1F      ANL A,  #0x1F         ;Now mask down to to 5 bits
+0x0475 FE         MOV R6, A             ;Save new Accum value to R6
+0x0476 E4         CLR A                 ;clear out accum
+0x0477 93         MOVC A, @A+DPTR       ;Grab byte at location DPTR (A is 0 after all)
+0x0478 A3         INC DPTR              ;Increment DPTR
+0x0479 60 01      JZ  0x047C            ;If grabbed value was 0 then branch to 0x47C
 0x047B 0E         INC R6 
 
 ; Jump Target - Callers: 0470 0479 
-0x047C CF         XCH A, R7 
-0x047D 54 C0      ANL A,  #0xC0
-0x047F 25 E0      ADD A,  ACC
-0x0481 60 A8      JZ  0x042B
-0x0483 40 B8      JC  0x043D
-0x0485 E4         CLR A 
-0x0486 93         MOVC A, @A+DPTR 
-0x0487 A3         INC DPTR 
-0x0488 FA         MOV R2, A 
-0x0489 E4         CLR A 
-0x048A 93         MOVC A, @A+DPTR 
-0x048B A3         INC DPTR 
-0x048C F8         MOV R0, A 
+0x047C CF         XCH A, R7             ;Target of two branches above, switch accum and R7
+0x047D 54 C0      ANL A,  #0xC0         ;Save only top two bits of accum
+0x047F 25 E0      ADD A,  ACC           ;Multiply the accum by two (add it to itself)
+0x0481 60 A8      JZ  0x042B            ;If accum is 0 then branch to 0x42B
+0x0483 40 B8      JC  0x043D            ;If carry set (basically, was accum bit 7 set?) then branch to 0x43D
+0x0485 E4         CLR A                 ;clear accum
+0x0486 93         MOVC A, @A+DPTR       ;Grab value at DPTR (Flash)
+0x0487 A3         INC DPTR              ;Increment DPTR
+0x0488 FA         MOV R2, A             ;Save Accum to R2
+0x0489 E4         CLR A                 ;Clear Accum
+0x048A 93         MOVC A, @A+DPTR       ;Grab value at DPTR (Flash)
+0x048B A3         INC DPTR              ;Increment DPTR
+0x048C F8         MOV R0, A             ;Save Accum to R0
 
 ; Jump Target - Callers: 04A2 04A4 
-0x048D E4         CLR A 
-0x048E 93         MOVC A, @A+DPTR 
-0x048F A3         INC DPTR 
-0x0490 C8         XCH A, R0 
-0x0491 C5 82      XCH A,  DPL
-0x0493 C8         XCH A, R0 
-0x0494 CA         XCH A, R2 
-0x0495 C5 83      XCH A,  DPH
-0x0497 CA         XCH A, R2 
-0x0498 F0         MOVX @DPTR, A 
-0x0499 A3         INC DPTR 
-0x049A C8         XCH A, R0 
-0x049B C5 82      XCH A,  DPL
-0x049D C8         XCH A, R0 
-0x049E CA         XCH A, R2 
-0x049F C5 83      XCH A,  DPH
-0x04A1 CA         XCH A, R2 
-0x04A2 DF E9      DJNZ R7,  0x048D
-0x04A4 DE E7      DJNZ R6,  0x048D
-0x04A6 80 BE      SJMP  0x0466
+0x048D E4         CLR A                 ;clear accum
+0x048E 93         MOVC A, @A+DPTR       ;grab value at DPTR (Flash)
+0x048F A3         INC DPTR              ;Increment DPTR
+0x0490 C8         XCH A, R0             ;Swap R0 and Accum
+0x0491 C5 82      XCH A,  DPL           ;Swap Accum and low byte of DPTR
+0x0493 C8         XCH A, R0             ;Swap Accum and R0
+0x0494 CA         XCH A, R2             ;Swap Accum and R2
+0x0495 C5 83      XCH A,  DPH           ;Swap Accum and high byte of DPTR
+0x0497 CA         XCH A, R2             ;Swap Accum and R2
+0x0498 F0         MOVX @DPTR, A         ;Grab value at DPTR (RAM)
+0x0499 A3         INC DPTR              ;Increment DPTR
+0x049A C8         XCH A, R0             ;Swap Accum and R0
+0x049B C5 82      XCH A,  DPL           ;Swap Accum and low byte of DPTR
+0x049D C8         XCH A, R0             ;Swap Accum and R0
+0x049E CA         XCH A, R2             ;Swap Accum and R2
+0x049F C5 83      XCH A,  DPH           ;Swap Accum and high byte of DPTR
+0x04A1 CA         XCH A, R2             ;Swap Accum and R2
+0x04A2 DF E9      DJNZ R7,  0x048D      ;Deincrement R7 and branch if not zero to 0x48D
+0x04A4 DE E7      DJNZ R6,  0x048D      ;Deincrement R6 and branch if not zero to 0x48D
+0x04A6 80 BE      SJMP  0x0466          ;Branch back up to 0x466
 
 ; Jump Target - Callers: 0AB1 073B 
 0x04A8 8C 0C      MOV  X0Ch, R4
@@ -1873,29 +1899,29 @@
 0x0A75 12 00 4E   LCALL  0x004E
 0x0A78 22         RET 
 
-; Jump Target - Callers: 0B00 
-0x0A79 D2 8E      SETB  TCON.6
-0x0A7B 75 89 20   MOV  TMOD, #0x20
-0x0A7E 75 8D EC   MOV  TH1, #0xEC
-0x0A81 75 8E 18   MOV  CKCON, #0x18
-0x0A84 D2 CA      SETB  TMP2CN.2
-0x0A86 C2 CB      CLR  TMP2CN.3
-0x0A88 75 CA 6F   MOV  TMR2RLL, #0x6F
+; Jump Target - Callers: 0B00   - UART Setup Routine
+0x0A79 D2 8E      SETB  TCON.6          ;enable timer 1 run control
+0x0A7B 75 89 20   MOV  TMOD, #0x20      ;Timer Mode 0010 0000 = mode 2 - 8 bit auto reload
+0x0A7E 75 8D EC   MOV  TH1, #0xEC       ;Timer 1 high byte = 0xEC
+0x0A81 75 8E 18   MOV  CKCON, #0x18     ;CKCON = 0001 1000 = Timer 2 low byte uses system clock, Timer 1 uses system clock
+0x0A84 D2 CA      SETB  TMP2CN.2        ;Set TMR2CN bit 2 = Timer 2 is enabled
+0x0A86 C2 CB      CLR  TMP2CN.3         ;Clear Timer 2 CN bit 3 = operate in 16 bit mode
+0x0A88 75 CA 6F   MOV  TMR2RLL, #0x6F   ;set up timer count registers.
 0x0A8B 75 CB FE   MOV  TMR2RLH, #0xFE
 0x0A8E 75 CC 6F   MOV  TMP2L, #0x6F
 0x0A91 75 CD FE   MOV  TMR2H, #0xFE
 0x0A94 22         RET 
 
-; Jump Target - Callers: 0B12 
-0x0A95 75 A5 FF   MOV  P1MDOUT, #0xFF
-0x0A98 75 A4 9D   MOV  P0MDOUT, #0x9D
-0x0A9B 75 80 6A   MOV  P0, #0x6A
-0x0A9E 75 D5 FF   MOV  P1SKIP, #0xFF
+; Jump Target - Callers: 0B12 - init routine called from reset vector - initializes ports
+0x0A95 75 A5 FF   MOV  P1MDOUT, #0xFF   ;Set P1 MDOUT to all be push/pull
+0x0A98 75 A4 9D   MOV  P0MDOUT, #0x9D   ;Set P0 MDOUT to 1001 1101 (1 = push/pull 0 = open drain)
+0x0A9B 75 80 6A   MOV  P0, #0x6A        ;Set P0 pins to 0110 1010 (0 = low, 1 = high)
+0x0A9E 75 D5 FF   MOV  P1SKIP, #0xFF    ;Set P1SKIP to all 1's (Skip all of them with crossbar)
 0x0AA1 E4         CLR A 
-0x0AA2 F5 90      MOV  P1, A
-0x0AA4 75 D4 F8   MOV  P0SKIP, #0xF8
-0x0AA7 75 E1 03   MOV  XBR0, #0x03
-0x0AAA 75 E2 C0   MOV  XBR1, #0xC0
+0x0AA2 F5 90      MOV  P1, A            ;Set all P1 pins to low
+0x0AA4 75 D4 F8   MOV  P0SKIP, #0xF8    ;Set P0SKIP to 1111 1000 (skip first 5 pins with crossbar)
+0x0AA7 75 E1 03   MOV  XBR0, #0x03      ;Set crossbar 0 to 0000 0011 (Enable SPI and UART on pins)
+0x0AAA 75 E2 C0   MOV  XBR1, #0xC0      ;Set crossbar 1 to 1100 0000 (Disable weak pull ups, enable crossbar)
 0x0AAD 22         RET 
 
 ; Jump Target - Callers: 0BC1 0B8C 
@@ -1925,24 +1951,25 @@
 0x0AD4 7F 00      MOV R7,  #0x00
 0x0AD6 22         RET 
 
-; Data in FLASH Space
+; Data in FLASH Space - These are jump targets. The pattern is FF then two bytes that form a 16 bit
+; jump target.
 0x0AD7            0xFF
-0x0AD8            0x0A
+0x0AD8            0x0A      ;First target 0x0A1A
 0x0AD9            0x1A
 0x0ADA            0xFF
-0x0ADB            0x0A
+0x0ADB            0x0A      ;Second target 0x0A5B
 0x0ADC            0x5B ([)
 0x0ADD            0xFF
-0x0ADE            0x08
+0x0ADE            0x08      ;Third target 0x080A
 0x0ADF            0x0A
 0x0AE0            0xFF
-0x0AE1            0x09
+0x0AE1            0x09      ;Fourth target 0x09A7
 0x0AE2            0xA7
 0x0AE3            0xFF
-0x0AE4            0x0B
+0x0AE4            0x0B      ;Fifth target 0x0B38
 0x0AE5            0x38 (8)
 0x0AE6            0xFF
-0x0AE7            0x0B
+0x0AE7            0x0B      ;Sixth target 0x0BCE
 0x0AE8            0xCE
 
 ; Jump Target - Callers: 0720 09EC 0020 0018 0046 0ACE 
@@ -2439,29 +2466,29 @@
 0x0D12            0xFD
 0x0D13            0xF4
 0x0D14            0xF3
-0x0D15            0xFF
-0x0D16            0x10
+0x0D15            0xFF          ;Here starts another set of jump table targets FF in between each is ignored
+0x0D16            0x10          ;First target = 0x102A
 0x0D17            0x2A (*)
 0x0D18            0xFF
-0x0D19            0x0F
+0x0D19            0x0F          ;Second target = 0xF27
 0x0D1A            0x27 (')
 0x0D1B            0xFF
-0x0D1C            0x11
+0x0D1C            0x11          ;Third Target = 0x1154
 0x0D1D            0x54 (T)
 0x0D1E            0xFF
-0x0D1F            0x10
+0x0D1F            0x10          ;Fourth target = 0x10B8
 0x0D20            0xB8
 0x0D21            0xFF
-0x0D22            0x11
+0x0D22            0x11          ;Five target = 0x1175
 0x0D23            0x75 (u)
 0x0D24            0xFF
-0x0D25            0x11
+0x0D25            0x11          ;Sixth Target = 0x11EB
 0x0D26            0xEB
 0x0D27            0xFF
-0x0D28            0x12
+0x0D28            0x12          ;Seventh target = 0x1279
 0x0D29            0x79 (y)
 0x0D2A            0xFF
-0x0D2B            0x10
+0x0D2B            0x10          ;Eighth/Final target = 0x105E
 0x0D2C            0x5E (^)
 
 ; Jump Target - Callers: 0C00 
@@ -3450,7 +3477,7 @@
 0x129C F5 23      MOV  X23h, A
 0x129E 22         RET 
 
-; Jump Target - Callers: 0F82 0F9E 0E91 0ECE 10B4 1096 
+; Jump Target - Callers: 0F82 0F9E 0E91 0ECE 10B4 1096
 0x129F EF         MOV A, R7 
 0x12A0 60 03      JZ  0x12A5
 0x12A2 C3         CLR C 
