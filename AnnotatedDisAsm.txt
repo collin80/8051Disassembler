@@ -699,9 +699,9 @@
 0x0364 7B 00      MOV R3,  #0x00
 0x0366 7A 00      MOV R2,  #0x00
 0x0368 79 3C      MOV R1,  #0x3C
-0x036A C0 03      PUSH  X03h        ;R3
-0x036C C0 02      PUSH  X02h        ;R2
-0x036E C0 01      PUSH  X01h        ;R1
+0x036A C0 03      PUSH  R3        ;R3
+0x036C C0 02      PUSH  R2        ;R2
+0x036E C0 01      PUSH  R1        ;R1
 0x0370 AB 1D      MOV R3,  X1Dh
 0x0372 AA 1E      MOV R2,  X1Eh
 0x0374 A9 1F      MOV R1,  X1Fh
@@ -754,7 +754,7 @@
 0x03B6 34 FF      ADDC A,  #0xFF
 0x03B8 C3         CLR C 
 0x03B9 13         RRC A 
-0x03BA B5 05 03   CJNE A,  X05h, 0x03C0
+0x03BA B5 05 03   CJNE A,  R5, 0x03C0
 
 ; Jump Target - Callers: 03A4 
 0x03BD 7F 03      MOV R7,  #0x03
@@ -947,27 +947,27 @@
 0x04A4 DE E7      DJNZ R6,  0x048D      ;Deincrement R6 and branch if not zero to 0x48D
 0x04A6 80 BE      SJMP  0x0466          ;Branch back up to 0x466
 
-; Jump Target - Callers: 0AB1 073B 
-0x04A8 8C 0C      MOV  X0Ch, R4
-0x04AA 8D 0D      MOV  X0Dh, R5
-0x04AC AD 07      MOV R5,  X07h
-0x04AE AC 06      MOV R4,  X06h
-0x04B0 8A 0E      MOV  X0Eh, R2
-0x04B2 8B 0F      MOV  X0Fh, R3
+; Jump Target - Callers: 0AB1 073B      ;seems to save registers to storage then init them to new values
+0x04A8 8C 0C      MOV  X0Ch, R4         ;Set RAM 0x0C to R4
+0x04AA 8D 0D      MOV  X0Dh, R5         ;Set RAM 0x0D to R5
+0x04AC AD 07      MOV R5, R7            ;Set R5 to value from R7
+0x04AE AC 06      MOV R4, R6            ;Set R4 to value from R6
+0x04B0 8A 0E      MOV  X0Eh, R2         ;Set RAM 0x0E to R2
+0x04B2 8B 0F      MOV  X0Fh, R3         ;Set RAM 0x0F to R1
 0x04B4 E4         CLR A 
-0x04B5 F9         MOV R1, A 
+0x04B5 F9         MOV R1, A             ;Clear R1
 
 ; Jump Target - Callers: 0515 
-0x04B6 D3         SETB C 
-0x04B7 ED         MOV A, R5 
-0x04B8 95 0D      SUBB A,  X0Dh
-0x04BA EC         MOV A, R4 
-0x04BB 95 0C      SUBB A,  X0Ch
-0x04BD 50 58      JNC  0x0517
-0x04BF AF 05      MOV R7,  X05h
-0x04C1 AE 04      MOV R6,  X04h
-0x04C3 12 0B 78   LCALL  0x0B78
-0x04C6 EF         MOV A, R7 
+0x04B6 D3         SETB C                ;Force carry flag set
+0x04B7 ED         MOV A, R5             ;Set accum to value in R5 (potentially from R7 if coming from 0x4A8)
+0x04B8 95 0D      SUBB A,  X0Dh         ; subb = A - Carry - Value 
+0x04BA EC         MOV A, R4             ;Set accum to value in R4 (potentially from R6 if coming from 0x4A8)
+0x04BB 95 0C      SUBB A,  X0Ch         
+0x04BD 50 58      JNC  0x0517           
+0x04BF AF 05      MOV R7,  R5          
+0x04C1 AE 04      MOV R6,  R4          
+0x04C3 12 0B 78   LCALL  0x0B78         ;Look up byte from FLASH
+0x04C6 EF         MOV A, R7
 0x04C7 7B 00      MOV R3,  #0x00
 0x04C9 FA         MOV R2, A 
 0x04CA ED         MOV A, R5 
@@ -1004,7 +1004,7 @@
 0x04F6 7F 01      MOV R7,  #0x01
 
 ; Jump Target - Callers: 04F4 
-0x04F8 A9 07      MOV R1,  X07h
+0x04F8 A9 07      MOV R1,  R7
 0x04FA E5 0F      MOV A,  X0Fh
 0x04FC 25 11      ADD A,  X11h
 0x04FE FF         MOV R7, A 
@@ -1044,11 +1044,11 @@
 
 ; Jump Target - Callers: 0A23 
 0x0532 E4         CLR A 
-0x0533 F5 09      MOV  X09h, A
+0x0533 F5 09      MOV  X09h, A      ;Null out 9, 10, 11 RAM locations
 0x0535 F5 0A      MOV  X0Ah, A
 0x0537 F5 0B      MOV  X0Bh, A
 0x0539 7F 01      MOV R7,  #0x01
-0x053B 12 00 56   LCALL  0x0056
+0x053B 12 00 56   LCALL  0x0056     ; Move R7 to RAM 0x68 (So set it to 1)
 
 ; Jump Target - Callers: 05AF 05A9 0584 056A 
 0x053E E5 09      MOV A,  X09h
@@ -1349,18 +1349,18 @@
 ; Jump Target - Callers: 077B 
 0x0726 7F 00      MOV R7,  #0x00
 0x0728 7E 1A      MOV R6,  #0x1A
-0x072A 12 0B 78   LCALL  0x0B78
-0x072D EF         MOV A, R7 
-0x072E F4         CPL A 
-0x072F 60 42      JZ  0x0773
-0x0731 E4         CLR A 
-0x0732 FB         MOV R3, A 
+0x072A 12 0B 78   LCALL  0x0B78   ;Look up value at 0x1A00 in FLASH (it's 3)
+0x072D EF         MOV A, R7       ;Transfer that value to Accum
+0x072E F4         CPL A           ; NOT 3 = 1111 1100 = 0xFC
+0x072F 60 42      JZ  0x0773      ; yet again a branch that cannot happen. 0x1A00 is always 3 (isn't it?!)
+0x0731 E4         CLR A           ; zero out accum
+0x0732 FB         MOV R3, A       ; zero out R3 and R2 as well.
 0x0733 FA         MOV R2, A 
-0x0734 7D FD      MOV R5,  #0xFD
-0x0736 7C 1B      MOV R4,  #0x1B
+0x0734 7D FD      MOV R5,  #0xFD  ; more register setting for some reason.
+0x0736 7C 1B      MOV R4,  #0x1B  
 0x0738 FF         MOV R7, A 
 0x0739 7E 0C      MOV R6,  #0x0C
-0x073B 12 04 A8   LCALL  0x04A8
+0x073B 12 04 A8   LCALL  0x04A8   ;XXX
 0x073E 8E 0A      MOV  X0Ah, R6
 0x0740 8F 0B      MOV  X0Bh, R7
 0x0742 7F FE      MOV R7,  #0xFE
@@ -1369,8 +1369,8 @@
 0x0749 EF         MOV A, R7 
 0x074A 7F 00      MOV R7,  #0x00
 0x074C FE         MOV R6, A 
-0x074D C0 06      PUSH  X06h
-0x074F C0 07      PUSH  X07h
+0x074D C0 06      PUSH  R6
+0x074F C0 07      PUSH  R7
 0x0751 7F FF      MOV R7,  #0xFF
 0x0753 7E 1B      MOV R6,  #0x1B
 0x0755 12 0B 78   LCALL  0x0B78
@@ -1383,9 +1383,9 @@
 0x0760 34 00      ADDC A,  #0x00
 0x0762 FE         MOV R6, A 
 0x0763 E5 0B      MOV A,  X0Bh
-0x0765 B5 07 0B   CJNE A,  X07h, 0x0773
+0x0765 B5 07 0B   CJNE A,  R7, 0x0773
 0x0768 E5 0A      MOV A,  X0Ah
-0x076A B5 06 06   CJNE A,  X06h, 0x0773
+0x076A B5 06 06   CJNE A,  R6, 0x0773
 0x076D 12 0B D7   LCALL  0x0BD7
 0x0770 12 0C 00   LCALL  0x0C00
 
@@ -1837,17 +1837,17 @@
 0x0A16 12 06 D2   LCALL  0x06D2
 0x0A19 22         RET 
 
-; Jump Target - Callers: 
-0x0A1A 7F 01      MOV R7,  #0x01
-0x0A1C 12 00 4E   LCALL  0x004E
-0x0A1F C2 93      CLR  P1.3
-0x0A21 D2 93      SETB  P1.3
-0x0A23 12 05 32   LCALL  0x0532
-0x0A26 EF         MOV A, R7 
-0x0A27 64 06      XRL A,  #0x06
-0x0A29 60 06      JZ  0x0A31
-0x0A2B 75 69 05   MOV  X69h, #0x05
-0x0A2E C2 93      CLR  P1.3
+; Jump Target - Callers: ;First entry in main loop jump table
+0x0A1A 7F 01      MOV R7,  #0x01    ;R7 = 1
+0x0A1C 12 00 4E   LCALL  0x004E     ;call does nothing but set RAM 0x61 to R7 (so 1 in this case)
+0x0A1F C2 93      CLR  P1.3         ; Turn off LED
+0x0A21 D2 93      SETB  P1.3        ; Turn it on... Yeah, that was fun
+0x0A23 12 05 32   LCALL  0x0532     ; Initializes some RAM locations (x9, xA, xB, x69)
+0x0A26 EF         MOV A, R7         ; Above call left R7 = 1
+0x0A27 64 06      XRL A,  #0x06     ; 1 ^ 6 = 7
+0x0A29 60 06      JZ  0x0A31        ; Ah... this could never be zero?! I see no way this could ever branch...
+0x0A2B 75 69 05   MOV  X69h, #0x05  ; Set main loop branch selector byte to 5
+0x0A2E C2 93      CLR  P1.3         ; Turn LED off
 0x0A30 22         RET 
 
 ; Jump Target - Callers: 0A29 
@@ -1860,25 +1860,26 @@
 
 ; Jump Target - Callers: 0B08 
 0x0A3C E4         CLR A 
-0x0A3D F5 69      MOV  X69h, A
+0x0A3D F5 69      MOV  X69h, A      ;Write 0 to x69
 
-; Jump Target - Callers: 0A59 
-0x0A3F E5 69      MOV A,  X69h
-0x0A41 75 F0 03   MOV  B, #0x03
-0x0A44 A4         MUL AB 
-0x0A45 24 D7      ADD A,  #0xD7
-0x0A47 F5 82      MOV  DPL, A
+; Jump Target - Callers: 0A59       ; Basically an infinite loop
+                                    ; This appears to be the main program loop
+0x0A3F E5 69      MOV A,  X69h      ;grab value from x69
+0x0A41 75 F0 03   MOV B, #0x03     
+0x0A44 A4         MUL AB            ;Multiply value from x69 by 3
+0x0A45 24 D7      ADD A,  #0xD7     ;Add 0xD7 to result
+0x0A47 F5 82      MOV DPL, A        ;put that in low byte of DPTR
 0x0A49 E4         CLR A 
-0x0A4A 34 0A      ADDC A,  #0x0A
-0x0A4C F5 83      MOV  DPH, A
+0x0A4A 34 0A      ADDC A,  #0x0A    
+0x0A4C F5 83      MOV DPH, A        ;Set high byte of DPTR to A
 0x0A4E 74 01      MOV A,  #0x01
-0x0A50 93         MOVC A, @A+DPTR 
-0x0A51 FA         MOV R2, A 
-0x0A52 74 02      MOV A,  #0x02
-0x0A54 93         MOVC A, @A+DPTR 
-0x0A55 F9         MOV R1, A 
-0x0A56 12 01 90   LCALL  0x0190
-0x0A59 80 E4      SJMP  0x0A3F
+0x0A50 93         MOVC A, @A+DPTR   ;Look up 1 + DPTR
+0x0A51 FA         MOV R2, A         ;Drop that in R2
+0x0A52 74 02      MOV A,  #0x02     
+0x0A54 93         MOVC A, @A+DPTR   ;Look up 2 + DPTR
+0x0A55 F9         MOV R1, A         ;Put that in R1
+0x0A56 12 01 90   LCALL  0x0190     ;Do a call that grabs R1 and R2 and does the jump to that address.
+0x0A59 80 E4      SJMP  0x0A3F      ;Jump back to top of this routine
 
 ; Jump Target - Callers: 
 0x0A5B 7F 01      MOV R7,  #0x01
@@ -1899,20 +1900,22 @@
 0x0A75 12 00 4E   LCALL  0x004E
 0x0A78 22         RET 
 
-; Jump Target - Callers: 0B00   - UART Setup Routine
-0x0A79 D2 8E      SETB  TCON.6          ;enable timer 1 run control
+; Jump Target - Callers: 0B00   - UART Setup Routine / Timer Setup
+0x0A79 D2 8E      SETB  TCON.6          ;enable timer 1 run control - used for UART
 0x0A7B 75 89 20   MOV  TMOD, #0x20      ;Timer Mode 0010 0000 = mode 2 - 8 bit auto reload
 0x0A7E 75 8D EC   MOV  TH1, #0xEC       ;Timer 1 high byte = 0xEC
 0x0A81 75 8E 18   MOV  CKCON, #0x18     ;CKCON = 0001 1000 = Timer 2 low byte uses system clock, Timer 1 uses system clock
 0x0A84 D2 CA      SETB  TMP2CN.2        ;Set TMR2CN bit 2 = Timer 2 is enabled
 0x0A86 C2 CB      CLR  TMP2CN.3         ;Clear Timer 2 CN bit 3 = operate in 16 bit mode
 0x0A88 75 CA 6F   MOV  TMR2RLL, #0x6F   ;set up timer count registers.
-0x0A8B 75 CB FE   MOV  TMR2RLH, #0xFE
-0x0A8E 75 CC 6F   MOV  TMP2L, #0x6F
+0x0A8B 75 CB FE   MOV  TMR2RLH, #0xFE   ; FE6F = 65135 
+0x0A8E 75 CC 6F   MOV  TMP2L, #0x6F     ; If timer runs 24.5MHz that's about 2.65ms timeout... why?
 0x0A91 75 CD FE   MOV  TMR2H, #0xFE
 0x0A94 22         RET 
 
 ; Jump Target - Callers: 0B12 - init routine called from reset vector - initializes ports
+; According to our schematic, P1.3 is connected to the LED, P0.0 is SCLK, P0.1 is MISO, P0.2 is MOSI, P0.3 is CS
+; P0.4 is UART TX, P0.5 is UART RX
 0x0A95 75 A5 FF   MOV  P1MDOUT, #0xFF   ;Set P1 MDOUT to all be push/pull
 0x0A98 75 A4 9D   MOV  P0MDOUT, #0x9D   ;Set P0 MDOUT to 1001 1101 (1 = push/pull 0 = open drain)
 0x0A9B 75 80 6A   MOV  P0, #0x6A        ;Set P0 pins to 0110 1010 (0 = low, 1 = high)
@@ -1987,21 +1990,21 @@
 0x0AF8 8F 99      MOV  SBUF, R7
 0x0AFA 22         RET 
 
-; Jump Target - Callers: 0428 
-0x0AFB 12 0B 0C   LCALL  0x0B0C
-0x0AFE D2 93      SETB  P1.3
-0x0B00 12 0A 79   LCALL  0x0A79
-0x0B03 12 0B A5   LCALL  0x0BA5
-0x0B06 C2 93      CLR  P1.3
-0x0B08 12 0A 3C   LCALL  0x0A3C
+; Jump Target - Callers: 0428       ; A set of hardware init routines. 
+0x0AFB 12 0B 0C   LCALL  0x0B0C     ; Early hardware set up  
+0x0AFE D2 93      SETB  P1.3        ; P1.3 is connected to an LED so this would likely turn it on.
+0x0B00 12 0A 79   LCALL  0x0A79     ; Setup timers (Timer 2 and Timer 1 for UART)
+0x0B03 12 0B A5   LCALL  0x0BA5     ; Set up UART
+0x0B06 C2 93      CLR  P1.3         ; Turn LED off
+0x0B08 12 0A 3C   LCALL  0x0A3C     ; Seems to be jumping into the main system loop - as far as I know interrupts are still off initially.
 0x0B0B 22         RET 
 
-; Jump Target - Callers: 0AFB 
-0x0B0C 12 0B 45   LCALL  0x0B45
-0x0B0F 12 00 26   LCALL  0x0026
-0x0B12 12 0A 95   LCALL  0x0A95
-0x0B15 12 00 2E   LCALL  0x002E
-0x0B18 02 00 36   LJMP  0x0036
+; Jump Target - Callers: 0AFB       ; Another set of init routines
+0x0B0C 12 0B 45   LCALL  0x0B45     ; enable voltage monitor and set it as reset source
+0x0B0F 12 00 26   LCALL  0x0026     ; disable all PCA0 functions / make sure watchdog is off
+0x0B12 12 0A 95   LCALL  0x0A95     ; initialize ports P0 and P1
+0x0B15 12 00 2E   LCALL  0x002E     ; Set internal oscillator parameters
+0x0B18 02 00 36   LJMP  0x0036      ; Turn off interrupts globally - note this is a jump not a call but that's ok for last statement in a call
 
 ; Jump Target - Callers: 03E7 040C 
 0x0B1B AB 1B      MOV R3,  X1Bh
@@ -2029,14 +2032,14 @@
 0x0B44 22         RET 
 
 ; Jump Target - Callers: 0B0C 
-0x0B45 75 FF 80   MOV  VDDMON, #0x80
+0x0B45 75 FF 80   MOV  VDDMON, #0x80        ;enable VDDMon
 0x0B48 E4         CLR A 
 0x0B49 FF         MOV R7, A 
 
 ; Jump Target - Callers: 0B4B 
 0x0B4A 0F         INC R7 
-0x0B4B BF 14 FC   CJNE R7,  #0x14, 0x0B4A
-0x0B4E 75 EF 02   MOV  RSTSRC, #0x02
+0x0B4B BF 14 FC   CJNE R7,  #0x14, 0x0B4A   ; Wait a bit of time after enabling VDDMON
+0x0B4E 75 EF 02   MOV  RSTSRC, #0x02        ; Set VDDMON as reset source
 0x0B51 22         RET 
 
 ; Jump Target - Callers: 06EE 0918 
@@ -2080,6 +2083,9 @@
 0x0B77            0x88
 
 ; Jump Target - Callers: 0409 0BB4 04C3 04D1 0669 072A 0746 0755 
+; Seems to be a look up function that sets the current look up bytes to RAM 0x64:0x65 then sets them into DPTR
+; R7 is low byte, R6 is high byte;
+; Look up that byte in FLASH and return it in R7
 0x0B78 8E 64      MOV  X64h, R6
 0x0B7A 8F 65      MOV  X65h, R7
 0x0B7C 8F 82      MOV  DPL, R7
@@ -2111,12 +2117,12 @@
 0x0BA0 A8 5D      MOV R0,  X5Dh
 0x0BA2 02 01 30   LJMP  0x0130
 
-; Jump Target - Callers: 0B03 
-0x0BA5 C2 9F      CLR  SCON.7
-0x0BA7 D2 9D      SETB  SCON.5
-0x0BA9 D2 9C      SETB  SCON.4
-0x0BAB C2 99      CLR  SCON.1
-0x0BAD C2 98      CLR  SCON.0
+; Jump Target - Callers: 0B03   ;UART Set up
+0x0BA5 C2 9F      CLR  SCON.7   ;Set 8 bit serial mode
+0x0BA7 D2 9D      SETB  SCON.5  ;Only activate if stop bit is 1
+0x0BA9 D2 9C      SETB  SCON.4  ;Enable serial reception
+0x0BAB C2 99      CLR  SCON.1   ;Clear transmit interrupt flag
+0x0BAD C2 98      CLR  SCON.0   ;Clear receieve interrupt flag
 0x0BAF 22         RET 
 
 ; Jump Target - Callers: 07B2 
@@ -2141,11 +2147,11 @@
 0x0BCB F5 5D      MOV  X5Dh, A
 0x0BCD 22         RET 
 
-; Jump Target - Callers: 
-0x0BCE 7F 21      MOV R7,  #0x21
-0x0BD0 12 07 74   LCALL  0x0774
-0x0BD3 E4         CLR A 
-0x0BD4 F5 69      MOV  X69h, A
+; Jump Target - Callers: ;Sixth jump target on main loop.
+0x0BCE 7F 21      MOV R7,  #0x21    ;R7 = 0x21
+0x0BD0 12 07 74   LCALL  0x0774     ;XXX
+0x0BD3 E4         CLR A             
+0x0BD4 F5 69      MOV  X69h, A      ;Set main loop selector byte to 0
 0x0BD6 22         RET 
 
 ; Jump Target - Callers: 076D 
@@ -2628,14 +2634,14 @@
 0x0DBF C0 82      PUSH  DPL
 0x0DC1 C0 D0      PUSH  PSW
 0x0DC3 75 D0 00   MOV  PSW, #0x00
-0x0DC6 C0 00      PUSH  X00h
-0x0DC8 C0 01      PUSH  X01h
-0x0DCA C0 02      PUSH  X02h
-0x0DCC C0 03      PUSH  X03h
-0x0DCE C0 04      PUSH  X04h
-0x0DD0 C0 05      PUSH  X05h
-0x0DD2 C0 06      PUSH  X06h
-0x0DD4 C0 07      PUSH  X07h
+0x0DC6 C0 00      PUSH  R0
+0x0DC8 C0 01      PUSH  R1
+0x0DCA C0 02      PUSH  R2
+0x0DCC C0 03      PUSH  R3
+0x0DCE C0 04      PUSH  R4
+0x0DD0 C0 05      PUSH  R5
+0x0DD2 C0 06      PUSH  R6
+0x0DD4 C0 07      PUSH  R7
 0x0DD6 30 99 05   JNB  SCON.1, 0x0DDE
 0x0DD9 75 2B 00   MOV  X2Bh, #0x00
 0x0DDC C2 99      CLR  SCON.1
@@ -2676,14 +2682,14 @@
 0x0E0E 12 12 95   LCALL  0x1295
 
 ; Jump Target - Callers: 0DDE 
-0x0E11 D0 07      POP  X07h
-0x0E13 D0 06      POP  X06h
-0x0E15 D0 05      POP  X05h
-0x0E17 D0 04      POP  X04h
-0x0E19 D0 03      POP  X03h
-0x0E1B D0 02      POP  X02h
-0x0E1D D0 01      POP  X01h
-0x0E1F D0 00      POP  X00h
+0x0E11 D0 07      POP  R7
+0x0E13 D0 06      POP  R6
+0x0E15 D0 05      POP  R5
+0x0E17 D0 04      POP  R4
+0x0E19 D0 03      POP  R3
+0x0E1B D0 02      POP  R2
+0x0E1D D0 01      POP  R1
+0x0E1F D0 00      POP  R0
 0x0E21 D0 D0      POP  PSW
 0x0E23 D0 82      POP  DPL
 0x0E25 D0 83      POP  DPH
